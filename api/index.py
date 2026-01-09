@@ -1,45 +1,48 @@
 import os
+import json
 import urllib.parse
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+import requests
+from fastapi import FastAPI, Request
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+app = FastAPI()
 
-# MAIN HANDLER (ultra-light)
-async def reply_with_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-
-    q = update.message.text.strip()
-    if not q:
-        return
-
-    encoded = urllib.parse.quote_plus(q)
-
-    link = (
-        "https://www.youtube.com/results"
-        f"?search_query={encoded}&sp=EgIIAw%253D%253D"
+def send_message(chat_id, text):
+    requests.post(
+        f"{API_URL}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": text
+        },
+        timeout=3
     )
 
-    await update.message.reply_text(link)
+@app.post("/")
+async def webhook(req: Request):
+    body = await req.json()
 
-app.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, reply_with_link)
-)
+    message = body.get("message")
+    if not message:
+        return {"ok": True}
 
-# Vercel entry
-async def handler(request):
-    data = await request.json()
-    update = Update.de_json(data, app.bot)
-    await app.process_update(update)
-    return {
-        "statusCode": 200,
-        "body": "ok"
-    }
+    chat_id = message["chat"]["id"]
+    text = message.get("text")
+
+    if not text:
+        return {"ok": True}
+
+    query = urllib.parse.quote_plus(text.strip())
+
+    yt_link = (
+        "https://www.youtube.com/results"
+        f"?search_query={query}&sp=EgIIAw%253D%253D"
+    )
+
+    send_message(chat_id, yt_link)
+    return {"ok": True}
+
+@app.get("/")
+def root():
+    return {"status": "YT Last Hour Bot Running"}
